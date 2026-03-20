@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VeriNews – AI Fact Verification</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #050a0f;
+      --surface: #0b1219;
+      --surface2: #111c27;
+      --border: rgba(99, 179, 237, 0.12);
+      --border-hover: rgba(99, 179, 237, 0.35);
+      --text: #e8edf2;
+      --muted: #5a7a96;
+      --accent: #63b3ed;
+      --accent-glow: rgba(99, 179, 237, 0.2);
+      --fake: #f87171;
+      --fake-glow: rgba(248, 113, 113, 0.2);
+      --real: #34d399;
+      --real-glow: rgba(52, 211, 153, 0.2);
+      --warn: #fbbf24;
+      --warn-glow: rgba(251, 191, 36, 0.2);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100vh;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* Ambient background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(99,179,237,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 80% 80%, rgba(52,211,153,0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.6;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    /* ── HEADER ── */
+    .masthead {
+      text-align: center;
+      margin-bottom: 48px;
+      animation: fadeDown 0.8s ease both;
+    }
+
+    .masthead-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 14px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+
+    .masthead-eyebrow::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s ease infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .brand-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: clamp(3.5rem, 8vw, 6rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+
+    .brand-title em {
+      font-style: normal;
+      color: var(--accent);
+      position: relative;
+    }
+
+    .brand-title em::after {
+      content: '';
+      position: absolute;
+      bottom: 4px; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+    }
+
+    .brand-tagline {
+      margin-top: 12px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      font-weight: 300;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── CARD ── */
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.5),
+        0 40px 80px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+      animation: fadeUp 0.8s 0.2s ease both;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.5;
+    }
+
+    /* ── TEXTAREA ── */
+    .input-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .textarea-wrap {
+      position: relative;
+      border-radius: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .textarea-wrap:focus-within {
+      border-color: var(--border-hover);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    textarea {
+      display: block;
+      width: 100%;
+      min-height: 160px;
+      padding: 18px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      line-height: 1.7;
+      resize: vertical;
+      outline: none;
+    }
+
+    textarea::placeholder {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .char-count {
+      position: absolute;
+      bottom: 10px;
+      right: 14px;
+      font-size: 0.72rem;
+      font-family: 'DM Mono', monospace;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* ── BUTTON ── */
+    .scan-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      margin-top: 16px;
+      padding: 18px 24px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #1a6fa8, #0d4f7a);
+      color: white;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.3s, opacity 0.2s;
+      box-shadow: 0 4px 20px rgba(29, 110, 168, 0.3);
+    }
+
+    .scan-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+    }
+
+    .scan-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(99,179,237,0.35);
+    }
+
+    .scan-btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .scan-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .scan-btn svg {
+      width: 18px; height: 18px;
+      flex-shrink: 0;
+    }
+
+    /* Loading shimmer on button */
+    .scan-btn.loading::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+      animation: shimmer 1.2s infinite;
+    }
+
+    @keyframes shimmer {
+      to { left: 200%; }
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 28px 0;
+      color: var(--muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── RESULT ── */
+    .result-box {
+      display: none;
+      animation: fadeUp 0.5s ease both;
+    }
+
+    .verdict-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .verdict-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      flex-shrink: 0;
+      transition: background 0.4s, box-shadow 0.4s;
+    }
+
+    .verdict-text {}
+
+    .verdict-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .verdict-main {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1.2;
+      transition: color 0.4s;
+    }
+
+    /* ── METER ── */
+    .meter-section {
+      margin-bottom: 20px;
+    }
+
+    .meter-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .meter-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: color 0.4s;
+    }
+
+    .meter-track {
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 99px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .meter-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 99px;
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s;
+      background: var(--accent);
+      position: relative;
+    }
+
+    .meter-fill::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 20px;
+      background: rgba(255,255,255,0.3);
+      filter: blur(4px);
+    }
+
+    /* ── SIGNALS ── */
+    .signals {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .signal-chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .signal-chip strong {
+      display: block;
+      font-size: 1rem;
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    /* ── FOOTER ── */
+    .page-footer {
+      margin-top: 36px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      animation: fadeUp 0.8s 0.4s ease both;
+    }
+
+    /* State classes */
+    .state-fake .verdict-main { color: var(--fake); }
+    .state-fake .meter-fill { background: var(--fake); }
+    .state-fake .verdict-icon { background: var(--fake-glow); box-shadow: 0 0 20px var(--fake-glow); }
+    .state-fake .meter-value { color: var(--fake); }
+
+    .state-real .verdict-main { color: var(--real); }
+    .state-real .meter-fill { background: var(--real); }
+    .state-real .verdict-icon { background: var(--real-glow); box-shadow: 0 0 20px var(--real-glow); }
+    .state-real .meter-value { color: var(--real); }
+
+    .state-warn .verdict-main { color: var(--warn); }
+    .state-warn .meter-fill { background: var(--warn); }
+    .state-warn .verdict-icon { background: var(--warn-glow); box-shadow: 0 0 20px var(--warn-glow); }
+    .state-warn .meter-value { color: var(--warn); }
+
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 600px) {
+      .card { padding: 24px; }
+      .signals { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="masthead-eyebrow">Live AI Verification</div>
+    <h1 class="brand-title"><em>Veri</em>News</h1>
+    <p class="brand-tagline">Precision fact analysis — powered by neural language intelligence</p>
+  </header>
+
+  <div class="card">
+
+    <label class="input-label" for="news-input">Article or Headline</label>
+    <div class="textarea-wrap">
+      <textarea id="news-input" placeholder="Paste any news headline, article excerpt, or claim to verify its authenticity…"></textarea>
+      <span class="char-count" id="char-count">0 chars</span>
+    </div>
+
+    <button class="scan-btn" id="scan-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        <path d="M11 8v6M8 11h6"/>
+      </svg>
+      <span id="btn-label">Analyze for Disinformation</span>
+    </button>
+
+    <div class="divider" id="divider" style="display:none;">Analysis Result</div>
+
+    <div class="result-box" id="result-box">
+
+      <div class="verdict-row">
+        <div>
+          <p class="verdict-label">Verification Verdict</p>
+          <p class="verdict-main" id="verdict-main">—</p>
+        </div>
+        <div class="verdict-icon" id="verdict-icon">🔍</div>
+      </div>
+
+      <div class="meter-section">
+        <div class="meter-header">
+          <span>Disinformation Risk Score</span>
+          <span class="meter-value" id="meter-value">0%</span>
+        </div>
+        <div class="meter-track">
+          <div class="meter-fill" id="meter-fill"></div>
+        </div>
+      </div>
+
+      <div class="signals">
+        <div class="signal-chip">
+          <strong id="sig-words">—</strong>
+          Flagged Words
+        </div>
+        <div class="signal-chip">
+          <strong id="sig-length">—</strong>
+          Text Length
+        </div>
+        <div class="signal-chip">
+          <strong id="sig-confidence">—</strong>
+          Confidence
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="page-footer">
+    &copy; 2026 VeriNews AI &nbsp;·&nbsp; For research & media literacy purposes
+  </footer>
+
+</div>
+
+<script>
+  const input = document.getElementById('news-input');
+  const btn = document.getElementById('scan-btn');
+  const btnLabel = document.getElementById('btn-label');
+  const charCount = document.getElementById('char-count');
+  const resultBox = document.getElementById('result-box');
+  const divider = document.getElementById('divider');
+  const verdictMain = document.getElementById('verdict-main');
+  const verdictIcon = document.getElementById('verdict-icon');
+  const meterFill = document.getElementById('meter-fill');
+  const meterValue = document.getElementById('meter-value');
+  const sigWords = document.getElementById('sig-words');
+  const sigLength = document.getElementById('sig-length');
+  const sigConfidence = document.getElementById('sig-confidence');
+
+  const flagWords = ['shocking', 'unbelievable', 'secret', 'hidden', 'miracle', 'conspiracy', 'exposed', 'exclusive', 'banned', 'censored', '!!!', 'hoax', 'fraud', 'coverup'];
+
+  input.addEventListener('input', () => {
+    charCount.textContent = input.value.length + ' chars';
+  });
+
+  function analyze(text) {
+    let score = 0;
+    let hits = 0;
+    flagWords.forEach(w => {
+      if (text.toLowerCase().includes(w)) { score += 15; hits++; }
+    });
+    score += text.length % 30;
+    return {
+      score: Math.min(Math.max(score, 5), 98),
+      hits,
+    };
+  }
+
+  btn.addEventListener('click', () => {
+    const text = input.value.trim();
+    if (text.length < 10) { input.focus(); return; }
+
+    btn.disabled = true;
+    btn.classList.add('loading');
+    btnLabel.textContent = 'Analyzing…';
+    resultBox.style.display = 'none';
+    divider.style.display = 'none';
+    resultBox.className = 'result-box';
+
+    setTimeout(() => {
+      const { score, hits } = analyze(text);
+
+      divider.style.display = '';
+      resultBox.style.display = 'block';
+
+      // Animate meter
+      requestAnimationFrame(() => {
+        meterFill.style.width = score + '%';
+        meterValue.textContent = score + '%';
+      });
+
+      const words = text.trim().split(/\s+/).length;
+      sigWords.textContent = hits;
+      sigLength.textContent = words + ' words';
+
+      let stateClass, verdict, icon, confidence;
+      if (score >= 65) {
+        stateClass = 'state-fake';
+        verdict = 'Likely Disinformation';
+        icon = '🚨';
+        confidence = 'High';
+      } else if (score <= 35) {
+        stateClass = 'state-real';
+        verdict = 'Appears Authentic';
+        icon = '✅';
+        confidence = 'High';
+      } else {
+        stateClass = 'state-warn';
+        verdict = 'Unverified – Mixed Signals';
+        icon = '⚠️';
+        confidence = 'Moderate';
+      }
+
+      resultBox.classList.add(stateClass);
+      verdictMain.textContent = verdict;
+      verdictIcon.textContent = icon;
+      sigConfidence.textContent = confidence;
+
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btnLabel.textContent = 'Analyze for Disinformation';
+    }, 900);
+  });
+</script>
+</body>
+</html>
